@@ -28,6 +28,7 @@ namespace GitHub.Runner.Worker
 
         public async Task<TaskResult> RunAsync(Pipelines.AgentJobRequestMessage message, CancellationToken jobRequestCancellationToken)
         {
+            System.Diagnostics.Debugger.Launch();
             // Validate parameters.
             Trace.Entering();
             ArgUtil.NotNull(message, nameof(message));

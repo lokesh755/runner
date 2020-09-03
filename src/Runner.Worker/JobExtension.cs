@@ -263,6 +263,46 @@ namespace GitHub.Runner.Worker
                                 preJobSteps.Add(preStep);
                             }
                         }
+                        else if (step.Type == Pipelines.StepType.Parallel)
+                        {
+                            var parallelStep = step as Pipelines.ParallelStep;
+                            Trace.Info($"Adding {parallelStep.DisplayName}.");
+                            var parallelStepRunner = HostContext.CreateService<IParallelStepRunner>(); ;
+                            parallelStepRunner.Condition = step.Condition;
+                            jobSteps.Add(parallelStepRunner);
+
+                            foreach (var parallelActionStep in parallelStep.Steps)
+                            {
+                                if (parallelActionStep.Type == Pipelines.StepType.Action)
+                                {
+                                    var action = parallelActionStep as Pipelines.ActionStep;
+                                    Trace.Info($"Adding {action.DisplayName}.");
+                                    var actionRunner = HostContext.CreateService<IActionRunner>();
+                                    actionRunner.Action = action;
+                                    actionRunner.Stage = ActionRunStage.Main;
+                                    actionRunner.Condition = action.Condition;
+                                    var contextData = new Pipelines.ContextData.DictionaryContextData();
+                                    if (message.ContextData?.Count > 0)
+                                    {
+                                        foreach (var pair in message.ContextData)
+                                        {
+                                            contextData[pair.Key] = pair.Value;
+                                        }
+                                    }
+
+                                    actionRunner.TryEvaluateDisplayName(contextData, context);
+                                    parallelStepRunner.Steps.Add(actionRunner);
+
+                                    if (prepareResult.PreStepTracker.TryGetValue(step.Id, out var preStep))
+                                    {
+                                        Trace.Info($"Adding pre-{action.DisplayName}.");
+                                        preStep.TryEvaluateDisplayName(contextData, context);
+                                        preStep.DisplayName = $"Pre {preStep.DisplayName}";
+                                        preJobSteps.Add(preStep);
+                                    }
+                                }                                
+                            }
+                        }
                     }
 
                     var intraActionStates = new Dictionary<Guid, Dictionary<string, string>>();
@@ -297,6 +337,19 @@ namespace GitHub.Runner.Worker
                             ArgUtil.NotNull(actionStep, step.DisplayName);
                             intraActionStates.TryGetValue(actionStep.Action.Id, out var intraActionState);
                             actionStep.ExecutionContext = jobContext.CreateChild(actionStep.Action.Id, actionStep.DisplayName, actionStep.Action.Name, null, actionStep.Action.ContextName, intraActionState);
+                        }
+                        else if (step is ParallelStepRunner parallelStep)
+                        {
+                            Guid stepId = Guid.NewGuid();
+                            parallelStep.ExecutionContext = jobContext.CreateChild(stepId, parallelStep.DisplayName ?? "parallel step", stepId.ToString("N"), null, null);
+
+                            foreach (var parallelStepChild in parallelStep.Steps)
+                            {
+                                if (parallelStepChild is IActionRunner parallelActionStep)
+                                {
+                                    parallelActionStep.ExecutionContext = jobContext.CreateChild(parallelActionStep.Action.Id, parallelActionStep.DisplayName, parallelActionStep.Action.Name, $"__{Guid.NewGuid()}", parallelActionStep.Action.ContextName, null);
+                                }
+                            }
                         }
                     }
 

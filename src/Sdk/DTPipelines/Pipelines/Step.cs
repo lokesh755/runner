@@ -68,5 +68,7 @@ namespace GitHub.DistributedTask.Pipelines
     {
         [DataMember]
         Action = 4,
+        [DataMember]
+        Parallel = 6
     }
 }
